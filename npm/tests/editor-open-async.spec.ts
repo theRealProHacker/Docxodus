@@ -219,4 +219,31 @@ test.describe('DocxEditor.openAsync: windowed, yielding mount (#776)', () => {
     expect(outcome.progressCalls).toBe(0);
     expect(outcome.fallbackUnits).toBeGreaterThanOrEqual(117);
   });
+
+  test('the session open, the chrome render and the first window each run in a task of their own', async ({ page }) => {
+    // Each is one synchronous engine call; on a cold runtime each can take as long as the rest
+    // of the mount, so chaining them onto one task is the main-thread block the mount exists to
+    // avoid. A timer tick between two calls proves the page had a turn in between.
+    const order = await page.evaluate(async (bytes: number[]) => {
+      const D = (window as any).Docxodus;
+      const real = D.getWasmExports ? D.getWasmExports() : D;
+      const log: string[] = [];
+      let ticks = 0;
+      let lastTicks = 0;
+      const note = (name: string) => { log.push(ticks > lastTicks ? `tick ${name}` : name); lastTicks = ticks; };
+      const bridge = { ...real.DocxSessionBridge };
+      for (const name of ['OpenSession', 'RenderEditorChromeHtml', 'RenderEditorRangeHtml']) {
+        const f = bridge[name];
+        bridge[name] = (...args: unknown[]) => { note(name); return f(...args); };
+      }
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const ticker = setInterval(() => ticks++, 0);
+      const editor = await D.DocxEditor.openAsync(container, new Uint8Array(bytes), { ...real, DocxSessionBridge: bridge }, {});
+      clearInterval(ticker);
+      editor.close();
+      return log.slice(0, 3);
+    }, Array.from(fixture));
+    expect(order).toEqual(['OpenSession', 'tick RenderEditorChromeHtml', 'tick RenderEditorRangeHtml']);
+  });
 });

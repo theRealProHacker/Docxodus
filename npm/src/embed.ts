@@ -34,7 +34,7 @@ import {
   openDocxHistoryArchive,
 } from "./index.js";
 import { DocxEditor } from "./editor.js";
-import type { DocxEditorExports, DocxEditorOptions } from "./editor.js";
+import type { DocxEditorExports, DocxEditorOpenAsyncOptions } from "./editor.js";
 import { mountRibbon } from "./ribbon.js";
 import type { RibbonEditor, RibbonOptions } from "./ribbon.js";
 import type { RibbonHistoryOptions } from './ribbon-history.js';
@@ -46,7 +46,7 @@ import type { DocxHistoryClient, DocxHistoryUpdate, HistoryHead, HistoryPosition
 // one-stop surface (convert, compare, diff, sessions, annotations, ...).
 export * from "./index.js";
 export { DocxEditor } from "./editor.js";
-export type { DocxEditorExports, DocxEditorOptions } from "./editor.js";
+export type { DocxEditorExports, DocxEditorOptions, DocxEditorOpenAsyncOptions } from "./editor.js";
 
 /**
  * A document to load: raw bytes, a Blob/File (e.g. from an <input type="file">),
@@ -301,6 +301,15 @@ function createScopedEditorExports(
     bridge.RenderEditorHtml = (...args) =>
       scopeDocumentStyles(renderEditorHtml(...args), rootSelector);
   }
+  // The windowed mount's chrome render carries the same stylesheet; its error result is a JSON
+  // object, which must reach the editor unwrapped.
+  const renderEditorChromeHtml = bridge.RenderEditorChromeHtml;
+  if (renderEditorChromeHtml) {
+    bridge.RenderEditorChromeHtml = (...args) => {
+      const html = renderEditorChromeHtml(...args);
+      return html.trimStart().startsWith("{") ? html : scopeDocumentStyles(html, rootSelector);
+    };
+  }
   return {
     DocxSessionBridge: bridge,
     DocumentConverter: {
@@ -519,9 +528,15 @@ export async function createHistoryViewer(container: string | HTMLElement, histo
   catch (error) { viewer.destroy(); throw error; }
 }
 
-export interface CreateEditorOptions extends DocxEditorOptions {
+export interface CreateEditorOptions extends DocxEditorOpenAsyncOptions {
   /** Explicit URL of the wasm assets directory; omit to auto-detect. */
   wasmBasePath?: string;
+  /**
+   * Mount through {@link DocxEditor.openAsync} instead of {@link DocxEditor.open}: the document
+   * lands in windows of `windowSize` body units with the event loop free between them, so the
+   * host page stays responsive while a long document opens. Default false.
+   */
+  windowed?: boolean;
 }
 
 /**
@@ -538,7 +553,7 @@ export async function createEditor(
   options: CreateEditorOptions = {},
 ): Promise<DocxEditor> {
   const el = resolveContainer(container);
-  const { wasmBasePath, ...editorOptions } = options;
+  const { wasmBasePath, windowed, ...editorOptions } = options;
   await ensureWasm(wasmBasePath);
   const mount = createScopedMount(el);
   // The runtime object is the real bridge; DocxEditorExports is the editor's
@@ -550,7 +565,9 @@ export async function createEditor(
   try {
     return source == null
       ? DocxEditor.openBlank(mount.root, exports, editorOptions)
-      : DocxEditor.open(mount.root, await toDocumentBytes(source), exports, editorOptions);
+      : windowed
+        ? await DocxEditor.openAsync(mount.root, await toDocumentBytes(source), exports, editorOptions)
+        : DocxEditor.open(mount.root, await toDocumentBytes(source), exports, editorOptions);
   } catch (error) {
     el.replaceChildren();
     throw error;
