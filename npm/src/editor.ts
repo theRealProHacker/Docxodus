@@ -2072,9 +2072,10 @@ export class DocxEditor {
     return DocxEditor.open(container, exports.DocxSessionBridge.CreateBlankDocx(), exports, options);
   }
 
-  /** Lossless DOCX bytes reflecting all edits. */
+  /** Lossless DOCX bytes reflecting all edits, including typing in the focused block not yet committed. */
   save(): Uint8Array {
     this.assertOpen();
+    this.commitFocusedTyping();
     return this.exports.DocxSessionBridge.Save(this.handle);
   }
 
@@ -3571,6 +3572,10 @@ export class DocxEditor {
       return undefined;
     }
     el.dataset.committedText = blockContentText(el);
+    // The node stays in place, so its render signature still describes the text before this
+    // commit. Reconcile compares signatures: an undo that restores that text would match the
+    // stale stamp and leave the typed text on screen. Unsigned, the node reads as changed.
+    el.removeAttribute("data-render-sig");
     return result.modified?.[0]?.id ?? fullId;
   }
 
@@ -4537,9 +4542,22 @@ export class DocxEditor {
     this.swapBlock(block, unid, res.modified?.[0])?.focus();
   }
 
+  /**
+   * Write what the user has typed into the focused block to the session. Typing is committed on
+   * blur, so while the caret is still in the block the session has not seen it: an undo would
+   * revert the edit BEFORE it (and the repaint then drop the typing), and a save would leave it out.
+   */
+  private commitFocusedTyping(): void {
+    const el = this.activeBlock;
+    if (!el?.isConnected || !this.container.contains(el)) return;
+    const fullId = this.anchorIdOf(el);
+    if (fullId) this.syncBlock(el, fullId);
+  }
+
   /** Undo the last edit (incremental repaint; falls back to a full re-render). */
   undo(): void {
     if (this.closed) return;
+    this.commitFocusedTyping();
     if (!this.exports.DocxSessionBridge.Undo(this.handle)) return;
     this.invalidateBlockMoveTargets();
     this.reconcile();
@@ -4548,6 +4566,9 @@ export class DocxEditor {
   /** Redo the last undone edit (incremental repaint; falls back to a full re-render). */
   redo(): void {
     if (this.closed) return;
+    // Typing since the undo is a new edit: committing it first discards the redo branch, as
+    // the session does for any other edit, instead of being silently overwritten by the redo.
+    this.commitFocusedTyping();
     if (!this.exports.DocxSessionBridge.Redo(this.handle)) return;
     this.invalidateBlockMoveTargets();
     this.reconcile();
