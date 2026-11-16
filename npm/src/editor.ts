@@ -302,6 +302,13 @@ export interface DocxEditorOptions {
   showRevisions?: boolean;
   /** Author stamped on native Word revisions. Default "docxodus". */
   revisionAuthor?: string;
+  /**
+   * Undo steps the editor's session retains (`DocxSessionSettings.undoDepth`). Unset, the
+   * session's default applies (20). Every committed edit is a step, so a long editing session —
+   * or one multi-paragraph paste, which commits several — can outrun the default. The session's
+   * undo memory budget still bounds the heap, so on a large document fewer steps may be kept.
+   */
+  undoDepth?: number;
   /** Account identifiers for ownership; absent, null or empty retains display-name ownership. */
   revisionIdentities?: readonly RevisionIdentity[] | null;
   /**
@@ -1474,9 +1481,9 @@ export class DocxEditor {
   private container: HTMLElement;
   private readonly handle: number;
   private readonly options: Required<
-    Omit<DocxEditorOptions, "onEdit" | "onEditFailed" | "onMove" | "onStoryChange" | "onCommentsChange" | "showRevisions">
+    Omit<DocxEditorOptions, "onEdit" | "onEditFailed" | "onMove" | "onStoryChange" | "onCommentsChange" | "showRevisions" | "undoDepth">
   > &
-    Pick<DocxEditorOptions, "onEdit" | "onEditFailed" | "onMove" | "onStoryChange" | "onCommentsChange" | "showRevisions">;
+    Pick<DocxEditorOptions, "onEdit" | "onEditFailed" | "onMove" | "onStoryChange" | "onCommentsChange" | "showRevisions" | "undoDepth">;
   /** Map a block's current bare unid → its full kind:scope:unid (DocxSession anchor). */
   private readonly unidToFullId = new Map<string, string>();
   /** The element whose [data-anchor] descendants are the editable blocks (container or page container). */
@@ -1909,6 +1916,7 @@ export class DocxEditor {
       trackedChanges: options.trackedChanges ?? TrackedChangeMode.Accept,
       showRevisions: options.showRevisions,
       revisionAuthor: options.revisionAuthor ?? "docxodus",
+      undoDepth: options.undoDepth,
       revisionIdentities: options.revisionIdentities?.map(identity => ({...identity})) ?? null,
       comments: options.comments ?? true,
       commentAuthor: options.commentAuthor ?? options.revisionAuthor ?? "Reviewer",
@@ -1942,6 +1950,8 @@ export class DocxEditor {
       trackedChanges: trackedChangeWireName(opts.trackedChanges),
       revisionAuthor: opts.revisionAuthor,
       revisionIdentities: opts.revisionIdentities,
+      // Absent unless set, so the session's own default stays the only one.
+      undoDepth: opts.undoDepth,
     }));
     return new DocxEditor(container, exports, handle, opts);
   }
