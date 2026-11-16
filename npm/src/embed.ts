@@ -574,6 +574,27 @@ export async function createEditor(
   }
 }
 
+/**
+ * Start the runtime and run the editor's open path once on a blank document, so a later
+ * {@link createEditor} pays less of the engine's first-call cost on the main thread.
+ *
+ * The first session open and the first renders of a page's runtime are several times slower
+ * than later ones. Calling this while the user is not yet editing (for example from
+ * `requestIdleCallback` once the page has loaded) moves that cost to a moment the host chooses.
+ * The warm-up mounts windowed into a detached element, so it too yields between its engine
+ * calls; it leaves no session open. Resolves when done; safe to call more than once.
+ */
+export async function prewarmEditor(options: { wasmBasePath?: string } = {}): Promise<void> {
+  await ensureWasm(options.wasmBasePath);
+  const exports = getWasmExports() as unknown as DocxEditorExports;
+  const scratch = document.createElement("div");
+  const editor = await DocxEditor.openAsync(scratch, exports.DocxSessionBridge.CreateBlankDocx(), exports, {
+    paginated: false,
+    headerFooter: true,
+  });
+  editor.close();
+}
+
 export interface CreateRibbonEditorOptions extends Omit<RibbonOptions, 'history'> {
   /** Explicit URL of the wasm assets directory; omit to auto-detect. */
   wasmBasePath?: string;
