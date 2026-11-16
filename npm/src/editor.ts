@@ -1857,7 +1857,7 @@ export class DocxEditor {
    * {@link open} renders and wires the entire document in one synchronous task, which on a
    * long document is the largest single block of a reading-and-editing session. This variant
    * pays only the session open up front, then mounts the document in windows of body units,
-   * yielding to the event loop between them: the chrome — stylesheet, section wrappers with
+   * yielding to the event loop after the session open, after the chrome, and between windows: the chrome — stylesheet, section wrappers with
    * their page geometry, footnote and endnote sections — comes from one cheap engine render
    * that sees no body content, and each window from the engine's block renderer, which lays
    * units out exactly as the full render does (the plan's border-box grouping is never split).
@@ -1888,6 +1888,10 @@ export class DocxEditor {
     const opts = DocxEditor.resolveOptions(options);
     const editor = DocxEditor.openSession(container, bytes, exports, opts);
     try {
+      // Opening the session and rendering the chrome are each one synchronous engine call, and
+      // on a cold runtime each can take as long as the rest of the mount. Run them in tasks of
+      // their own, so neither is chained to the next onto one long task.
+      await yieldToEventLoop();
       editor.refreshAnchorMap();
       if (opts.headerFooter) editor.createRegion();
       await editor.mountWindowed(
@@ -2007,6 +2011,7 @@ export class DocxEditor {
       this.container.appendChild(flow);
       this.editRoot = flow;
     }
+    await yieldToEventLoop();
 
     const plan = JSON.parse(this.renderPlanJson()) as RenderPlan & { error?: string };
     if (plan.error) throw new Error(plan.error);
