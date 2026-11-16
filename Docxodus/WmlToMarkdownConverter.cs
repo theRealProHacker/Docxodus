@@ -1195,6 +1195,7 @@ public static class WmlToMarkdownConverter
         ctx.Sb.Append(anchor);
         var afterAnchor = ctx.Sb.Length;
         EmitInlineRuns(p, ctx);
+        EscapeOrderedListMarkers(ctx.Sb, afterAnchor);
         // If the paragraph had no visible runs, either tag it with the marked-empty
         // sentinel (∅) or strip the anchor's dangling trailing separator space.
         if (ctx.Sb.Length == afterAnchor && afterAnchor > beforeContent)
@@ -1544,6 +1545,29 @@ public static class WmlToMarkdownConverter
         new(@"([\\`*_{}\[\]()#+\-!|>~])", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static string EscapeMarkdown(string s) => MarkdownMetaPattern.Replace(s, @"\$1");
+
+    /// <summary>
+    /// Escape the period of a literal ordered-list marker ("3. ", "2026.") at the start of each
+    /// line of a plain paragraph's text, from <paramref name="start"/> on. <see cref="EscapeMarkdown"/>
+    /// works per text node and cannot see line starts, and a period is only markup there: without
+    /// this, echoing the projected line back through <see cref="DocxSession.ReplaceText"/> turns the
+    /// paragraph into a list item and drops the number. The parser unescapes <c>\.</c> to a period.
+    /// </summary>
+    private static void EscapeOrderedListMarkers(StringBuilder sb, int start)
+    {
+        for (var line = start; line < sb.Length; line++)
+        {
+            if (line > start && sb[line - 1] != '\n') continue;
+            var end = line;
+            while (end < sb.Length && end - line < 10 && char.IsAsciiDigit(sb[end])) end++;
+            // CommonMark: one to nine digits, then the delimiter, then a space, a tab or the line end.
+            if (end > line && end - line <= 9 && end < sb.Length && sb[end] == '.'
+                && (end + 1 == sb.Length || sb[end + 1] is ' ' or '\t' or '\n'))
+            {
+                sb.Insert(end, '\\');
+            }
+        }
+    }
 
     // ------------------------------------------------------------------
     // Phase 4: list items. ListItemRetriever does the numbering math; we
