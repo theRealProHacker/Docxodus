@@ -1932,9 +1932,13 @@ export class DocxEditor {
     // save/re-render hop, and it asks for that per call via SaveWithAnchorIds.
     // emitMarkdownPatch off: the editor re-renders from HTML, never from markdown patches,
     // so paying a whole-document re-projection per op would be dead weight.
+    // captureInitialProjection off for the same reason at open: the session would project the
+    // whole document and copy its bytes for GetDiff / semantic changes / delivery evidence, none
+    // of which the editor reads — the largest avoidable part of the open on the main thread.
     requireRevisionIdentitySupport(exports.DocxSessionBridge, opts.revisionIdentities);
     const handle = exports.DocxSessionBridge.OpenSession(bytes, JSON.stringify({
       emitMarkdownPatch: false,
+      captureInitialProjection: false,
       trackedChanges: trackedChangeWireName(opts.trackedChanges),
       revisionAuthor: opts.revisionAuthor,
       revisionIdentities: opts.revisionIdentities,
