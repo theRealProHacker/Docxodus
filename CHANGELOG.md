@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `DocxEditor.commitPendingInput()` commits the focused block's typing to the session without re-rendering the block, so the caret and focus stay; `DocxEditor.grep(pattern, options)` searches the live document's text (committing focused typing first). Both replace reaching into the editor's private `syncBlock` / session handle.
+
+- `prewarmEditor()` (embed) starts the runtime and runs the windowed open path once on a blank document in a detached element, so a host can pay the engine's first-call cost when it chooses (for example when idle) instead of when the user opens a document.
+
 - `DocxEditorOptions.undoDepth` sets how many undo steps the editor's session keeps. Unset, the session default (20) applies as before. Every committed edit is a step, so a long editing session, or one multi-paragraph paste, could run past what undo could take back, and the editor had no way to ask for more.
 
 - `createEditor(container, source, { windowed: true })` mounts through `DocxEditor.openAsync`, so an embed can open a long document without holding the main thread for the whole mount; `windowSize` and `onProgress` pass through. The windowed mount's chrome render is style-scoped like the embed's other renders, so its stylesheet does not restyle the host page.

@@ -43,6 +43,7 @@ import type {
   EditErrorCode,
   EditResult,
   FormattingInspection,
+  GrepOptions,
   HeaderFooterKind,
   HyperlinkInfo,
   ImageInsertOptions,
@@ -56,6 +57,7 @@ import type {
   StyleInfo,
   TableBorderSpec,
   TableOfContentsOptions,
+  TextMatch,
 } from "./types.js";
 import { diffUnits, needsRemount, tokenOf, unidOf } from "./editor-reconcile.js";
 import { imageOnlyDelta, patchImageAttributes } from "./editor-image-patch.js";
@@ -65,6 +67,7 @@ import type { RenderPlan, RenderUnit, UnitDiff } from "./editor-reconcile.js";
 export interface DocxEditorExports {
   DocxSessionBridge: {
     GetVersion?: (handle: number) => string;
+    Grep?: (handle: number, pattern: string, optionsJson: string) => string;
     OpenSession: (bytes: Uint8Array, settingsJson: string) => number;
     CloseSession: (handle: number) => void;
     CreateBlankDocx: () => Uint8Array;
@@ -4566,11 +4569,40 @@ export class DocxEditor {
    * blur, so while the caret is still in the block the session has not seen it: an undo would
    * revert the edit BEFORE it (and the repaint then drop the typing), and a save would leave it out.
    */
-  private commitFocusedTyping(): void {
+  private commitFocusedTyping(): boolean {
     const el = this.activeBlock;
-    if (!el?.isConnected || !this.container.contains(el)) return;
+    if (!el?.isConnected || !this.container.contains(el)) return true;
     const fullId = this.anchorIdOf(el);
-    if (fullId) this.syncBlock(el, fullId);
+    return !fullId || this.syncBlock(el, fullId) !== undefined;
+  }
+
+  /**
+   * Commit what the user has typed into the focused block to the session now, without
+   * re-rendering the block: its DOM, the caret and focus stay as they are. Typing is otherwise
+   * committed on blur. A host that keeps its own undo grouping, saves on a timer, or reads the
+   * session while the user types calls this first. Returns false when the session rejected the
+   * text; the block then shows the session's content again.
+   */
+  commitPendingInput(): boolean {
+    this.assertOpen();
+    return this.commitFocusedTyping();
+  }
+
+  /**
+   * Search the live document's text — body, and with `options.scope` headers, footers and notes
+   * (`DocxSession.grep`). Typing in the focused block is committed first, so matches reflect
+   * what is on screen. Offsets are in the session's content model, the one the editor's own
+   * text commits use.
+   */
+  grep(pattern: string, options?: GrepOptions): TextMatch[] {
+    this.assertOpen();
+    const grep = this.exports.DocxSessionBridge.Grep;
+    if (typeof grep !== "function") throw new Error("This engine build has no Grep export");
+    this.commitFocusedTyping();
+    const result = JSON.parse(grep(this.handle, pattern, options ? JSON.stringify(options) : "")) as
+      TextMatch[] | { error?: string };
+    if (!Array.isArray(result)) throw new Error(result.error ?? "grep failed");
+    return result;
   }
 
   /** Undo the last edit (incremental repaint; falls back to a full re-render). */
