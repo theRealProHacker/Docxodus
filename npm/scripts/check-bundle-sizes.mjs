@@ -122,7 +122,9 @@ const budgetsKiB = {
   // Mode 15's leading above a note band (#1751) adds 74-82 gzip bytes over 0af51ef5:
   // embed/IIFE/editor/pagination 164517/164575/143168/58484. Round the four exhausted gates to the
   // next 0.1 KiB.
-  'embed.bundle.js': 160.7,
+  // Committing pending typing before the undo snapshot adds 66 gzip bytes over ab2c8ec9:
+  // embed 164583, 26 bytes over its gate. Round it to the next 0.1 KiB.
+  'embed.bundle.js': 160.8,
   // Floating-picture height measurement brings this bundle just above 138 KiB.
   // The same whole-box continuation moves IIFE from 138.989 to 139.234 KiB.
   // The appended bullet-normalization option adds 29 gzip bytes (161996 -> 162025).
